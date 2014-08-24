@@ -1,0 +1,166 @@
+# Is Manual Transmission more Fuel-efficient than Automatic Transmission?
+
+### Peer Assessment for the Regression Models course on Coursera
+
+## Executive summary
+
+This study is supposed to explore the relationship between a set of variables and miles per gallon (MPG) using the mtcars dataset. The data was extracted from the 1974 Motor Trend US magazine, and comprises fuel consumption and 10 aspects of automobile design and performance for 32 automobiles. The questions this article attempts to answer are:
+
+* Is an automatic or manual transmission better for MPG?
+* Quantify the MPG difference between automatic and manual transmissions.
+
+The data analysis will show that while apparently there is a difference, it is partially explained by the fact that automatic transmission is more prevalent for lighter cars, while manual transmission is more commonly seen in heavier cars. If two cars have similar attributes except for transmission type, they will have similar MPG. However, this conclusion comes with a rather large degree of uncertainty, due to the fact that the variance in the data is not completely explained by linear models.
+
+## Data Processing
+
+```{r}
+library(datasets)
+data(mtcars)
+```
+
+The variables present in the dataset are:
+
+* mpg	- Miles/(US) gallon
+* cyl	- Number of cylinders
+* disp	- Displacement (cu.in.)
+* hp	- Gross horsepower
+* drat	- Rear axle ratio
+* wt	- Weight (lb/1000)
+* qsec	- 1/4 mile time
+* vs	- V/S
+* am	- Transmission (0 = automatic, 1 = manual)
+* gear	- Number of forward gears
+* carb	- Number of carburators
+
+One of the important things to do is changing the type of the transmission variable from numerical to categorical(factor), because the linear model treats these kinds of varibles differently.
+
+```{r}
+mtcars$am <- as.factor(mtcars$am)
+levels(mtcars$am) <- c("Automatic", "Manual")
+```
+
+# Exploratory data analysis
+
+First a pairs plot of all the variables is necessary to detect if there are any outliers that could influence the results and provide an intuition of the relationships between the variables.
+
+```{r fig.width=9, fig.height=9}
+pairs(mtcars, panel = panel.smooth, main = "mtcars Dataset", col = 3 + (mtcars$am == "Automatic"))
+```
+
+The differences between the MPG for cars with manual and automatic transmission can be visualized in the following box and whiskers plot: 
+
+```{r}
+boxplot(mpg ~ am, data = mtcars, main = "MPG by Transmission Type", ylab = "Miles per galleon")
+```
+
+The pairs plot showed some visible correlations in the first row between the target variable(mpg) and the other variables.
+
+```{r}
+# remove the factor and select the correlations between mpg and the other variables
+cor(mtcars[, -c(9)])[1, ]
+```
+
+The variable most strongly correlated with the miles per galleon is the weight and it is important to know if the factor variable influences this relationship or not.
+
+
+
+```{r}
+plot(mpg ~ wt, data = mtcars, col = 3 + (mtcars$am == "Automatic"), 
+     ylab = "Miles per galleon", xlab = "Weight (lb/1000)", 
+     main = "Miles per galleon and weight", pch = 19)
+legend("topright", c("Automatic", "Manual"), pch = 19, 
+       col = c(3, 4), title = "Transmission")
+```
+
+This plot reveals that the difference between the means illustrated earlier has one important cause: the weight is correlated with the number of miles per galleon and the cars with automatic transmission are on average lighter than the cars with manual transmission. In order to get an accurate comparison between these two transmission types, the analysis will have to take this fact into account.
+
+A t-test is a very effective way of determining whether this difference between the two categories is statistically significant or can be explained by random variation. However, the t-test assumes that the distributions it works with are approximatively normal and this must be checked as well.
+
+```{r}
+plot(density(mtcars$wt), main = "Density plot for weight")
+```
+
+The preconditions for the t-test are met, so we shall use it.
+
+```{r}
+amtest <- t.test(x = subset(mtcars, am == "Automatic")$wt, 
+                 y = subset(mtcars, am == "Manual")$wt, 
+                 alternative = c("two.sided"))
+```
+
+The p-value is `r amtest$p.value`, so there is a statistically significant weight difference between the cars with automatic and manual transmission.
+
+## Fitting linear models
+
+As seen in the exploratory analysis, the naive approach would be to fit a model that only takes into account the transmission type. This model will be called model 1.
+
+```{r}
+fit1 <- lm(mpg ~ am, data = mtcars)
+
+RMSE1 <- sqrt(sum(fit1$residuals ^ 2) / nrow(mtcars))
+RSQ1 <- summary(fit1)$r.squared
+```
+
+Model 2 will only take the weight of the car into account.
+
+```{r}
+fit2 <- lm(mpg ~ wt, data = mtcars)
+
+RMSE2 <- sqrt(sum(fit2$residuals ^ 2) / nrow(mtcars))
+RSQ2 <- summary(fit2)$r.squared
+```
+
+Model 3 uses both the weight and the transmission type and it will be compared to model 2 to quantify the influence the transmission type has on the MPG.
+
+```{r}
+fit3 <- lm(mpg ~ am + wt, data = mtcars)
+
+RMSE3 <- sqrt(sum(fit3$residuals ^ 2) / nrow(mtcars))
+RSQ3 <- summary(fit3)$r.squared
+```
+
+## Model Comparison
+
+#### Residuals
+
+The residuals will be plotted with the car weight as the x axis, to visualize the variance unexplained by the models.
+
+```{r fig.width=9, fig.height=3}
+par(mfcol = c(1, 3))
+plot(mtcars$wt,resid(fit1), main = "Model 1", xlab = "Weight (lbs/1000)", ylab = "Residuals")
+plot(mtcars$wt,resid(fit2), main = "Model 2", xlab = "Weight (lbs/1000)", ylab = "Residuals")
+plot(mtcars$wt, resid(fit3), main = "Model 3", xlab = "Weight (lbs/1000)", ylab = "Residuals")
+```
+
+The residuals for model 1 exhibit a linear pattern, which means that another feature could help reduce their values. Model 1 has larger residuals than the other two models because the model explains a smaller fraction of the variance in the data. The residuals of models 2 and 3 are almost identical, however they seem to get larger as the weight goes further from the mean, and to reduce them further we would need either polynomial features or a non-linear model.
+
+#### Performance
+
+Some summary statistics for these three models are root mean squared error(RMSE) and R<sup>2</sup>:
+
+* Model 1: RMSE = `r RMSE1`; R<sup>2</sup> = `r RSQ1`
+* Model 2: RMSE = `r RMSE2`; R<sup>2</sup> = `r RSQ2`
+* Model 3: RMSE = `r RMSE3`; R<sup>2</sup> = `r RSQ3`
+
+While model 1 does not predict MPG very well, models 2 and 3 have very similar performance characteristics. An analysis of the coefficients might determine why. A look at the R<sup>2</sup> values reveals the fact that adding the transmission type to model 2 does not add any predictive power.
+
+#### Coefficients
+
+The estimated coefficients for models 2 and 3 are:
+
+```{r}
+sumCoef2 <- summary(fit2)$coef
+sumCoef2
+
+sumCoef3 <- summary(fit3)$coef
+sumCoef3
+
+# compute the confidence interval for the required parameters
+transmission_ci <- sumCoef3[2, 1] + c(-1, 1) * qt(.975, df = fit3$df) * sumCoef3[2, 2]
+```
+
+The coefficient for the transmission variable has an estimated value of `r sumCoef3[2, 1]`, meaning that a car with manual transmission will have `r -sumCoef3[2, 1]` less miles per galleon than a similar car with automatic transmission. The 95% confidence interval for this coefficient is rather large compared to its estimated value, namely (`r transmission_ci[1]`, `r transmission_ci[2]`). To provide a basis for comparison, an increase in weight of 1000 lbs would lower the MPG by an average of `r -sumCoef3[3, 1]`.
+
+## Conclusion
+
+The large width of the confidence interval means that the estimated difference between the cars with manual and automatic transmission should not be taken at face value and a more detailed analysis is necessary.
